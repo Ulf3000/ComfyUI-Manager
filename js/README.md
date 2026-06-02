@@ -10,7 +10,7 @@ This directory contains the JavaScript frontend implementation for ComfyUI-Manag
 - **components-manager.js**: Manages reusable workflow components system.
 - **snapshot.js**: Implements the snapshot system for backing up and restoring installations.
 
-### Local Filtering Features (Hide/Unhide)
+# Local Filtering Features (Hide/Unhide)
 
 The frontend features a client-side item hiding mechanism implemented in both `custom-nodes-manager.js` and `model-manager.js`:
 - **State Persistence**: Hidden item hashes are retained locally in the browser using `localStorage` keys (`cmm_hidden_nodes_list` and `cmm_hidden_models_list`).
