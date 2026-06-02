@@ -5,10 +5,17 @@ This directory contains the JavaScript frontend implementation for ComfyUI-Manag
 ## Core Components
 
 - **comfyui-manager.js**: Main entry point that initializes the manager UI and integrates with ComfyUI.
-- **custom-nodes-manager.js**: Implements the UI for browsing, installing, and managing custom nodes.
-- **model-manager.js**: Handles the model management interface for downloading and organizing AI models.
+- **custom-nodes-manager.js**: Implements the UI for browsing, installing, and managing custom nodes. Includes local hide/unhide toggling capabilities via TurboGrid row interception.
+- **model-manager.js**: Handles the model management interface for downloading and organizing AI models. Features a local hide/unhide state manager matching the custom nodes architecture.
 - **components-manager.js**: Manages reusable workflow components system.
 - **snapshot.js**: Implements the snapshot system for backing up and restoring installations.
+
+### Local Filtering Features (Hide/Unhide)
+
+The frontend features a client-side item hiding mechanism implemented in both `custom-nodes-manager.js` and `model-manager.js`:
+- **State Persistence**: Hidden item hashes are retained locally in the browser using `localStorage` keys (`cmm_hidden_nodes_list` and `cmm_hidden_models_list`).
+- **TurboGrid Visibility Interception**: Triggered inside the `rowFilter` callback configuration to dynamically remove rows from view unless explicitly overridden.
+- **Master UI Override**: Provides a global "Show Hidden Items" checkbox wrapper in the dialog header section to reveal hidden items temporarily. Forced-visible rows are dimmed visually for easy recognition.
 
 ## Sharing Components
 
@@ -45,6 +52,6 @@ The frontend follows a modular component-based architecture:
 
 CSS files are included for specific components:
 - **custom-nodes-manager.css**: Styling for the node management UI
-- **model-manager.css**: Styling for the model management UI
+- **model-manager.css**: Styling for the model management UI. Contains matching style properties for dimming and highlighing local `tg-row-is-hidden` state rows.
 
 This frontend implementation provides a comprehensive yet user-friendly interface for managing the ComfyUI ecosystem.
