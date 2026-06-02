@@ -13,6 +13,40 @@ import { buildGuiFrameCustomHeader,  createSettingsCombo } from "./comfyui-gui-b
 
 loadCss("./model-manager.css");
 
+// --- INJECT CUSTOM CSS STYLES FOR THE HIDE FEATURE ---
+const style = document.createElement('style');
+style.textContent = `
+    .cmm-manager-show-hidden {
+        margin-left: 12px;
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        font-size: 12px;
+        cursor: pointer;
+        color: #ccc;
+    }
+    .cmm-manager-show-hidden input {
+        cursor: pointer;
+    }
+    .cmm-btn-hide-toggle {
+        background: transparent;
+        border: none;
+        color: #888;
+        cursor: pointer;
+        font-size: 14px;
+        padding: 2px 6px;
+    }
+    .cmm-btn-hide-toggle:hover {
+        color: #ff5555;
+    }
+    /* Dim hidden models globally when they are forced visible by the checkbox */
+    .tg-row-is-hidden {
+        opacity: 0.45;
+        background-color: rgba(255, 68, 68, 0.08) !important;
+    }
+`;
+document.head.appendChild(style);
+
 const gridId = "model";
 
 const pageHtml = `
@@ -40,6 +74,9 @@ export class ModelManager {
 		this.type = '';
 		this.base = '';
 		this.keywords = '';
+		
+		// Track whether we should show hidden elements
+		this.showHiddenActive = false;
 
 		this.init();
 
@@ -47,11 +84,25 @@ export class ModelManager {
 	}
 
 	init() {
+		// --- EDIT: Added master toggle checkbox UI element to header ---
+		const showHiddenLabel = $el("label.cmm-manager-show-hidden", {}, [
+			$el("input", { 
+				type: "checkbox",
+				checked: this.showHiddenActive,
+				onchange: (e) => {
+					this.showHiddenActive = e.target.checked;
+					this.updateGrid();
+				}
+			}),
+			$el("span", { textContent: "Show Hidden Items" })
+		]);
+
 		const header = $el("div.cmm-manager-header", {}, [
 			createSettingsCombo("Filter", $el("select.cmm-manager-filter")),
 			createSettingsCombo("Type", $el("select.cmm-manager-type")),
 			createSettingsCombo("Base", $el("select.cmm-manager-base")),
 			$el("input.cmm-manager-keywords.p-inputtext.p-component", { type: "search", placeholder: "Search" }),
+			showHiddenLabel, // Attached next to Search input
 			$el("div.cmm-manager-status"),
 			$el("div.cmm-flex-auto")
 		]);
@@ -219,6 +270,24 @@ export class ModelManager {
 		grid.bind('onClick', (e, d) => {
 			const { rowItem } = d;
 			const target = d.e.target;
+
+			// --- EDIT: Click intercept logic for the new Hide column ---
+			if (d.columnItem.id === "hide_item") {
+				e.preventDefault();
+				let currentHidden = JSON.parse(localStorage.getItem('cmm_hidden_models_list') || '[]');
+				const itemHash = rowItem.hash;
+
+				if (currentHidden.includes(itemHash)) {
+					currentHidden = currentHidden.filter(h => h !== itemHash);
+				} else {
+					currentHidden.push(itemHash);
+				}
+				localStorage.setItem('cmm_hidden_models_list', JSON.stringify(currentHidden));
+				
+				this.updateGrid();
+				return;
+			}
+
 			const mode = target.getAttribute("mode");
 			if (mode === "install") {
 				this.installModels([rowItem], target);
@@ -250,6 +319,14 @@ export class ModelManager {
 
 			// updateGrid handler for filter and keywords
 			rowFilter: (rowItem) => {
+				// --- EDIT: Check hidden storage list first ---
+				const hiddenList = JSON.parse(localStorage.getItem('cmm_hidden_models_list') || '[]');
+				const isHidden = hiddenList.includes(rowItem.hash);
+
+				// If it is hidden and master override toggle is OFF, suppress row rendering immediately
+				if (isHidden && !this.showHiddenActive) {
+					return false;
+				}
 
 				const searchableColumns = ["name", "type", "base", "description", "filename", "save_path"];
 				const models_extensions = ['.ckpt', '.pt', '.pt2', '.bin', '.pth', '.safetensors', '.pkl', '.sft'];
@@ -312,7 +389,24 @@ export class ModelManager {
 
 		const rows = this.modelList || [];
 
+		// --- EDIT: Prepend a custom interaction column schema right into columns configuration ---
 		const columns = [{
+			id: 'hide_item',
+			name: '👁',
+			width: 35,
+			align: 'center',
+			sortable: false,
+			formatter: (value, rowItem, columnItem) => {
+				const hiddenList = JSON.parse(localStorage.getItem('cmm_hidden_models_list') || '[]');
+				const isHidden = hiddenList.includes(rowItem.hash);
+				
+				const btn = document.createElement('button');
+				btn.className = 'cmm-btn-hide-toggle';
+				btn.innerText = isHidden ? '❌' : '👁';
+				btn.title = isHidden ? 'Unhide this model' : 'Hide this model';
+				return btn;
+			}
+		}, {
 			id: 'id',
 			name: 'ID',
 			width: 50,
@@ -392,6 +486,16 @@ export class ModelManager {
 			options,
 			rows,
 			columns
+		});
+
+		// --- EDIT: Hook TurboGrid's row class evaluator to add our dimming style state dynamically ---
+		this.grid.bind('onRowRender', (e, d) => {
+			const hiddenList = JSON.parse(localStorage.getItem('cmm_hidden_models_list') || '[]');
+			if (hiddenList.includes(d.rowItem.hash)) {
+				d.rowNode.classList.add('tg-row-is-hidden');
+			} else {
+				d.rowNode.classList.remove('tg-row-is-hidden');
+			}
 		});
 
 		this.grid.render();

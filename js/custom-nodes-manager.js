@@ -16,6 +16,40 @@ import TG from "./turbogrid.esm.js";
 
 loadCss("./custom-nodes-manager.css");
 
+// --- INJECT CUSTOM CSS STYLES FOR THE HIDE FEATURE ---
+const style = document.createElement('style');
+style.textContent = `
+    .cn-manager-show-hidden {
+        margin-left: 12px;
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        font-size: 12px;
+        cursor: pointer;
+        color: #ccc;
+    }
+    .cn-manager-show-hidden input {
+        cursor: pointer;
+    }
+    .cn-btn-hide-toggle {
+        background: transparent;
+        border: none;
+        color: #888;
+        cursor: pointer;
+        font-size: 14px;
+        padding: 2px 6px;
+    }
+    .cn-btn-hide-toggle:hover {
+        color: #ff5555;
+    }
+    /* Dim hidden nodes globally when they are forced visible by the checkbox */
+    .tg-row-is-hidden {
+        opacity: 0.45;
+        background-color: rgba(255, 68, 68, 0.08) !important;
+    }
+`;
+document.head.appendChild(style);
+
 const gridId = "node";
 
 const pageHtml = `
@@ -67,6 +101,9 @@ export class CustomNodesManager {
 		this.filter = '';
 		this.keywords = '';
 		this.restartMap = {};
+		
+		// Track whether we should show hidden elements
+		this.showHiddenActive = false;
 
 		this.init();
 
@@ -77,13 +114,23 @@ export class CustomNodesManager {
 	}
 
 	init() {
+		// --- EDIT: Added master toggle checkbox UI element to header ---
+		const showHiddenLabel = $el("label.cn-manager-show-hidden", {}, [
+			$el("input", { 
+				type: "checkbox",
+				checked: this.showHiddenActive,
+				onchange: (e) => {
+					this.showHiddenActive = e.target.checked;
+					this.updateGrid();
+				}
+			}),
+			$el("span", { textContent: "Show Hidden Items" })
+		]);
+
 		const header = $el("div.cn-manager-header.px-2", {}, [
-			// $el("label", {}, [
-			// 	$el("span", { textContent: "Filter" }),
-			// 	$el("select.cn-manager-filter")
-			// ]),
 			createSettingsCombo("Filter", $el("select.cn-manager-filter")),
 			$el("input.cn-manager-keywords.p-inputtext.p-component", { type: "search", placeholder: "Search" }),
+			showHiddenLabel, // Attached next to Search input
 			$el("div.cn-manager-status"),
 			$el("div.cn-flex-auto"),
 			$el("div.cn-manager-channel")
@@ -547,6 +594,23 @@ export class CustomNodesManager {
 				return;
 			}
 
+			// --- EDIT: Click intercept logic for the new Hide column ---
+			if (d.columnItem.id === "hide_item") {
+				e.preventDefault();
+				let currentHidden = JSON.parse(localStorage.getItem('cm_hidden_nodes_list') || '[]');
+				const itemHash = d.rowItem.hash;
+
+				if (currentHidden.includes(itemHash)) {
+					currentHidden = currentHidden.filter(h => h !== itemHash);
+				} else {
+					currentHidden.push(itemHash);
+				}
+				localStorage.setItem('cm_hidden_nodes_list', JSON.stringify(currentHidden));
+				
+				this.updateGrid();
+				return;
+			}
+
 			const btn = this.getButton(d.e.target);
 			if (btn) {
 				const item = this.grid.getRowItemBy("hash", d.rowItem.hash);
@@ -599,8 +663,15 @@ export class CustomNodesManager {
 				return autoHeightColumns.includes(columnItem.id)
 			},
 
-			// updateGrid handler for filter and keywords
+			// --- EDIT: Row Filter hook adjusted to read the hide layout configuration ---
 			rowFilter: (rowItem) => {
+				const hiddenList = JSON.parse(localStorage.getItem('cm_hidden_nodes_list') || '[]');
+				const isHidden = hiddenList.includes(rowItem.hash);
+
+				// If it is globally hidden and master override toggle is OFF, suppress row rendering immediately
+				if (isHidden && !this.showHiddenActive) {
+					return false;
+				}
 
 				const searchableColumns = ["title", "author", "description"];
 				if (this.hasAlternatives()) {
@@ -680,7 +751,25 @@ export class CustomNodesManager {
 
 
 		let self = this;
+		
+		// --- EDIT: Prepend a custom functional interaction column schema right into columns configuration ---
 		const columns = [{
+			id: 'hide_item',
+			name: '👁',
+			width: 35,
+			align: 'center',
+			sortable: false,
+			formatter: (value, rowItem, columnItem) => {
+				const hiddenList = JSON.parse(localStorage.getItem('cm_hidden_nodes_list') || '[]');
+				const isHidden = hiddenList.includes(rowItem.hash);
+				
+				const btn = document.createElement('button');
+				btn.className = 'cn-btn-hide-toggle';
+				btn.innerText = isHidden ? '❌' : '👁';
+				btn.title = isHidden ? 'Unhide this node package' : 'Hide this node package';
+				return btn;
+			}
+		}, {
 			id: 'id',
 			name: 'ID',
 			width: 50,
@@ -852,6 +941,16 @@ export class CustomNodesManager {
 			options: options,
 			rows: rows_values,
 			columns: columns
+		});
+
+		// --- EDIT: Hook TurboGrid's row class evaluator to add our dimming style state dynamically ---
+		this.grid.bind('onRowRender', (e, d) => {
+			const hiddenList = JSON.parse(localStorage.getItem('cm_hidden_nodes_list') || '[]');
+			if (hiddenList.includes(d.rowItem.hash)) {
+				d.rowNode.classList.add('tg-row-is-hidden');
+			} else {
+				d.rowNode.classList.remove('tg-row-is-hidden');
+			}
 		});
 
 		this.grid.render();
@@ -1677,6 +1776,19 @@ export class CustomNodesManager {
 
 	// ===========================================================================================
 
+	getWidgetType(type, inputName) {
+		if (type === 'COMBO') {
+		  	return 'COMBO'
+		}
+		const widgets = app.widgets;
+		if (`${type}:${inputName}` in widgets) {
+		  	return `${type}:${inputName}`
+		}
+		if (type in widgets) {
+		  	return type
+		}
+	}
+	
 	getNodesInWorkflow() {
 		let usedGroupNodes = new Set();
 		let allUsedNodes = {};
@@ -2203,6 +2315,13 @@ export class CustomNodesManager {
 	showRestart() {
 		this.element.querySelector(".cn-manager-restart").style.display = "block";
 		setNeedRestart(true);
+	}
+
+	showStatus(msg, color) {
+		if (color) {
+			msg = `<font color="${color}">${msg}</font>`;
+		}
+		this.element.querySelector(".cn-manager-status").innerHTML = msg;
 	}
 
 	showStop() {
