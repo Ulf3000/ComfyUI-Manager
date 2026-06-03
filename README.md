@@ -52,11 +52,6 @@ These are plain JSON arrays of item hashes. You can delete them at any time to r
 
 ---
 
-## ⚙️ Requirements
-
-- ComfyUI **v0.3.76+** (System User API required)
-- ComfyUI-Manager **v3.38+**
-
 ---
 
 ## 📝 Notes
