@@ -77,10 +77,41 @@ export class ModelManager {
 		
 		// Track whether we should show hidden elements
 		this.showHiddenActive = false;
+		
+		// Internal cache for backend-loaded hidden item hashes
+		this.hiddenModelsList = [];
 
 		this.init();
 
 		api.addEventListener("cm-queue-status", this.onQueueStatus);
+	}
+
+	// --- EDIT: Helper methods to sync with ComfyUI's user backend folder ---
+	async loadHiddenListFromBackend() {
+		try {
+			const response = await api.fetchApi('/userdata/hidden_models.json');
+			if (response.ok) {
+				const data = await response.json();
+				this.hiddenModelsList = Array.isArray(data) ? data : [];
+			} else {
+				this.hiddenModelsList = [];
+			}
+		} catch (e) {
+			console.warn("[Model Manager] Failed to load hidden list from backend, defaulting to empty.", e);
+			this.hiddenModelsList = [];
+		}
+	}
+
+	async saveHiddenListToBackend() {
+		try {
+			await api.fetchApi('/userdata/hidden_models.json', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify(this.hiddenModelsList)
+			});
+		} catch (e) {
+			console.error("[Model Manager] Failed to save hidden list back to server storage.", e);
+		}
 	}
 
 	init() {
@@ -267,23 +298,22 @@ export class ModelManager {
 			storeColumnWidth(gridId, columnItem)
 		});
 
-		grid.bind('onClick', (e, d) => {
+		grid.bind('onClick', async (e, d) => {
 			const { rowItem } = d;
 			const target = d.e.target;
 
-			// --- EDIT: Click intercept logic for the new Hide column ---
+			// --- EDIT: Click intercept logic processing file changes over backend API ---
 			if (d.columnItem.id === "hide_item") {
 				e.preventDefault();
-				let currentHidden = JSON.parse(localStorage.getItem('cmm_hidden_models_list') || '[]');
 				const itemHash = rowItem.hash;
 
-				if (currentHidden.includes(itemHash)) {
-					currentHidden = currentHidden.filter(h => h !== itemHash);
+				if (this.hiddenModelsList.includes(itemHash)) {
+					this.hiddenModelsList = this.hiddenModelsList.filter(h => h !== itemHash);
 				} else {
-					currentHidden.push(itemHash);
+					this.hiddenModelsList.push(itemHash);
 				}
-				localStorage.setItem('cmm_hidden_models_list', JSON.stringify(currentHidden));
 				
+				await this.saveHiddenListToBackend();
 				this.updateGrid();
 				return;
 			}
@@ -319,9 +349,8 @@ export class ModelManager {
 
 			// updateGrid handler for filter and keywords
 			rowFilter: (rowItem) => {
-				// --- EDIT: Check hidden storage list first ---
-				const hiddenList = JSON.parse(localStorage.getItem('cmm_hidden_models_list') || '[]');
-				const isHidden = hiddenList.includes(rowItem.hash);
+				// --- EDIT: Cross reference internal state synced with JSON storage ---
+				const isHidden = this.hiddenModelsList.includes(rowItem.hash);
 
 				// If it is hidden and master override toggle is OFF, suppress row rendering immediately
 				if (isHidden && !this.showHiddenActive) {
@@ -397,14 +426,10 @@ export class ModelManager {
 			align: 'center',
 			sortable: false,
 			formatter: (value, rowItem, columnItem) => {
-				const hiddenList = JSON.parse(localStorage.getItem('cmm_hidden_models_list') || '[]');
-				const isHidden = hiddenList.includes(rowItem.hash);
-				
-				const btn = document.createElement('button');
-				btn.className = 'cmm-btn-hide-toggle';
-				btn.innerText = isHidden ? '❌' : '👁';
-				btn.title = isHidden ? 'Unhide this model' : 'Hide this model';
-				return btn;
+				const isHidden = this.hiddenModelsList.includes(rowItem.hash);
+				return isHidden
+					? `<div style="width:100%;height:100%;background:#aa2222;" title="Unhide this model"></div>`
+					: `<div style="width:100%;height:100%;background:#22aa22;" title="Hide this model"></div>`;
 			}
 		}, {
 			id: 'id',
@@ -490,8 +515,7 @@ export class ModelManager {
 
 		// --- EDIT: Hook TurboGrid's row class evaluator to add our dimming style state dynamically ---
 		this.grid.bind('onRowRender', (e, d) => {
-			const hiddenList = JSON.parse(localStorage.getItem('cmm_hidden_models_list') || '[]');
-			if (hiddenList.includes(d.rowItem.hash)) {
+			if (this.hiddenModelsList.includes(d.rowItem.hash)) {
 				d.rowNode.classList.add('tg-row-is-hidden');
 			} else {
 				d.rowNode.classList.remove('tg-row-is-hidden');
@@ -750,6 +774,9 @@ export class ModelManager {
 		this.showLoading();
 
 		this.showStatus(`Loading external model list ...`);
+
+		// --- EDIT: Fetch the hidden models array from backend before rendering ---
+		await this.loadHiddenListFromBackend();
 
 		const mode = manager_instance.datasrc_combo.value;
 

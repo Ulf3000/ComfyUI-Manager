@@ -101,9 +101,12 @@ export class CustomNodesManager {
 		this.filter = '';
 		this.keywords = '';
 		this.restartMap = {};
-		
+
 		// Track whether we should show hidden elements
 		this.showHiddenActive = false;
+
+		// Internal cache for backend-loaded hidden custom node hashes
+		this.hiddenNodesList = [];
 
 		this.init();
 
@@ -111,6 +114,34 @@ export class CustomNodesManager {
 		api.getNodeDefs().then(objs => {
 			this.nodeMap = objs;
 		})
+	}
+
+	// --- Helper methods to sync with ComfyUI's user backend folder ---
+	async loadHiddenListFromBackend() {
+		try {
+			const response = await api.fetchApi('/userdata/hidden_nodes.json');
+			if (response.ok) {
+				const data = await response.json();
+				this.hiddenNodesList = Array.isArray(data) ? data : [];
+			} else {
+				this.hiddenNodesList = [];
+			}
+		} catch (e) {
+			console.warn("[Nodes Manager] Failed to load hidden list from backend, defaulting to empty.", e);
+			this.hiddenNodesList = [];
+		}
+	}
+
+	async saveHiddenListToBackend() {
+		try {
+			await api.fetchApi('/userdata/hidden_nodes.json', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify(this.hiddenNodesList)
+			});
+		} catch (e) {
+			console.error("[Nodes Manager] Failed to save hidden list to server storage.", e);
+		}
 	}
 
 	init() {
@@ -585,7 +616,7 @@ export class CustomNodesManager {
 			storeColumnWidth(gridId, columnItem)
 		});
 
-		grid.bind('onClick', (e, d) => {
+		grid.bind('onClick', async (e, d) => {
 
 			this.addHighlight(d.rowItem);
 
@@ -597,16 +628,15 @@ export class CustomNodesManager {
 			// --- EDIT: Click intercept logic for the new Hide column ---
 			if (d.columnItem.id === "hide_item") {
 				e.preventDefault();
-				let currentHidden = JSON.parse(localStorage.getItem('cm_hidden_nodes_list') || '[]');
 				const itemHash = d.rowItem.hash;
 
-				if (currentHidden.includes(itemHash)) {
-					currentHidden = currentHidden.filter(h => h !== itemHash);
+				if (this.hiddenNodesList.includes(itemHash)) {
+					this.hiddenNodesList = this.hiddenNodesList.filter(h => h !== itemHash);
 				} else {
-					currentHidden.push(itemHash);
+					this.hiddenNodesList.push(itemHash);
 				}
-				localStorage.setItem('cm_hidden_nodes_list', JSON.stringify(currentHidden));
-				
+
+				await this.saveHiddenListToBackend();
 				this.updateGrid();
 				return;
 			}
@@ -665,8 +695,7 @@ export class CustomNodesManager {
 
 			// --- EDIT: Row Filter hook adjusted to read the hide layout configuration ---
 			rowFilter: (rowItem) => {
-				const hiddenList = JSON.parse(localStorage.getItem('cm_hidden_nodes_list') || '[]');
-				const isHidden = hiddenList.includes(rowItem.hash);
+				const isHidden = this.hiddenNodesList.includes(rowItem.hash);
 
 				// If it is globally hidden and master override toggle is OFF, suppress row rendering immediately
 				if (isHidden && !this.showHiddenActive) {
@@ -760,14 +789,10 @@ export class CustomNodesManager {
 			align: 'center',
 			sortable: false,
 			formatter: (value, rowItem, columnItem) => {
-				const hiddenList = JSON.parse(localStorage.getItem('cm_hidden_nodes_list') || '[]');
-				const isHidden = hiddenList.includes(rowItem.hash);
-				
-				const btn = document.createElement('button');
-				btn.className = 'cn-btn-hide-toggle';
-				btn.innerText = isHidden ? '❌' : '👁';
-				btn.title = isHidden ? 'Unhide this node package' : 'Hide this node package';
-				return btn;
+				const isHidden = this.hiddenNodesList.includes(rowItem.hash);
+				return isHidden
+					? `<div style="width:100%;height:100%;background:#aa2222;" title="Unhide this node package"></div>`
+					: `<div style="width:100%;height:100%;background:#22aa22;" title="Hide this node package"></div>`;
 			}
 		}, {
 			id: 'id',
@@ -945,8 +970,7 @@ export class CustomNodesManager {
 
 		// --- EDIT: Hook TurboGrid's row class evaluator to add our dimming style state dynamically ---
 		this.grid.bind('onRowRender', (e, d) => {
-			const hiddenList = JSON.parse(localStorage.getItem('cm_hidden_nodes_list') || '[]');
-			if (hiddenList.includes(d.rowItem.hash)) {
+			if (this.hiddenNodesList.includes(d.rowItem.hash)) {
 				d.rowNode.classList.add('tg-row-is-hidden');
 			} else {
 				d.rowNode.classList.remove('tg-row-is-hidden');
@@ -2087,6 +2111,8 @@ export class CustomNodesManager {
 
 		const mode = manager_instance.datasrc_combo.value;
 		this.showStatus(`Loading custom nodes (${mode}) ...`);
+
+		await this.loadHiddenListFromBackend();
 
 		const skip_update = this.show_mode === ShowMode.UPDATE ? "" : "&skip_update=true";
 
