@@ -1,29 +1,64 @@
-# Local Hide/Unhide System (Fork Feature Outline)
+# 👁 Hide Items — ComfyUI Manager Extension
 
-Since this fork is frozen in its current state and will no longer receive upstream updates, the **Local Hide/Unhide System** is the core defining feature that sets it apart from the original ComfyUI-Manager. 
-
-This architecture allows you to clean up your workspace by muting unwanted nodes or models completely on the client side without altering the backend database channels.
+A quality-of-life patch for **ComfyUI Manager** that lets you hide custom nodes and models from their respective lists — keeping your workspace clean without uninstalling anything.
 
 ---
 
-## Architecture & Implementation Breakdown
+## ✨ Features
 
-### 1. Persistent Client-Side State
-Rather than relying on backend server migrations, the hide status is managed instantly in the browser.
-* **Storage Keys:** Tracks hidden items using `cmm_hidden_nodes_list` (for custom nodes) and `cmm_hidden_models_list` (for models) inside the browser's `localStorage`.
-* **Persistence:** Because it uses local storage, your muted preferences persist seamlessly across page reloads, browser tabs, and ComfyUI server restarts.
+- 🟢 **Green cell** = item is visible (click to hide)
+- 🔴 **Red cell** = item is hidden (click to unhide)
+- 👻 **Show Hidden** toggle — reveal hidden items as dimmed rows without removing them from the list permanently
+- 💾 **Persistent** — hidden lists are saved to disk via the ComfyUI API and survive restarts
+- 🧩 Works independently for **Custom Nodes** and **Models**
 
-### 2. TurboGrid Pipeline Interception
-The feature is deeply integrated into the `turbogrid.esm.js` component engine inside both `custom-nodes-manager.js` and `model-manager.js`:
-* **Interactive Column:** A new action column (`id: 'hide_item'`) displaying an eye (`👁`) icon is prepended to the grid layout schema. Clicking it instantly toggles the item's hidden state.
-* **Row Filtration Pass:** The grid’s core `rowFilter` method is hooked to cross-reference every item's unique hash against the local hidden list. If a match is found, TurboGrid suppresses the row from being rendered in the DOM.
 
-### 3. Master Global Override UI
-To ensure hidden items are never permanently lost, a master toggle switch is injected directly into the manager dialog headers next to the search filter input.
+<img width="1324" height="816" alt="image" src="https://github.com/user-attachments/assets/90982994-4eae-4977-99a0-966cfb6c0ccb" />
 
-* **"Show Hidden Items" Checkbox:** Checking this box forces the `rowFilter` to bypass the hiding restriction, bringing all muted rows back into view instantly.
-* **Visual Muting Classes (`tg-row-is-hidden`):** For clear context, rows that are meant to be hidden are assigned a custom CSS modifier class when forced visible. This applies an `opacity: 0.45` filter and a soft red background tint, making it effortless to identify muted items at a glance so you can click `❌` to unhide them.
+<img width="1361" height="836" alt="image" src="https://github.com/user-attachments/assets/00e4d22f-5b91-4850-b730-469962ed1e03" />
+
 
 ---
 
-## Summary of Code Injections
+## 📁 Files
+
+| File | Description |
+|------|-------------|
+| `custom-nodes-manager.js` | Patched custom nodes manager with hide support |
+| `model-manager.js` | Patched model manager with hide support |
+
+---
+
+## 💾 Storage
+
+Hidden items are saved to your ComfyUI user data folder:
+
+```
+ComfyUI/user/default/hidden_nodes.json   ← custom nodes
+ComfyUI/user/default/hidden_models.json  ← models
+```
+
+These are plain JSON arrays of item hashes. You can delete them at any time to reset.
+
+---
+
+## 🚀 Usage
+
+1. Drop the patched files into your `ComfyUI-Manager` custom node folder, replacing the originals
+2. Restart ComfyUI
+3. Open **Custom Nodes Manager** or **Model Manager**
+4. Click the coloured cell in the first column to toggle visibility
+5. Use the **Show Hidden Items** checkbox in the header to peek at hidden entries
+
+---
+
+## ⚙️ Requirements
+
+- ComfyUI **v0.3.76+** (System User API required)
+- ComfyUI-Manager **v3.38+**
+
+---
+
+## 📝 Notes
+
+> Hidden items are **not** uninstalled — they're just filtered from view. Re-enable anytime by clicking the red cell or using the Show Hidden toggle.
