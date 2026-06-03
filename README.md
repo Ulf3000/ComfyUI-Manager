@@ -1,6 +1,11 @@
-# 👁 Hide Items — ComfyUI Manager Extension
+# 👁 Hide Items — ComfyUI Manager MOD
 
 A quality-of-life patch for **ComfyUI Manager** that lets you hide custom nodes and models from their respective lists — keeping your workspace clean without uninstalling anything.
+
+files modified: 
+- model-manager.js
+  custom-nodes-manager.js
+
 
 ---
 
@@ -26,6 +31,8 @@ A quality-of-life patch for **ComfyUI Manager** that lets you hide custom nodes 
 |------|-------------|
 | `custom-nodes-manager.js` | Patched custom nodes manager with hide support |
 | `model-manager.js` | Patched model manager with hide support |
+
+just overwrite the files and refresh browser ! 
 
 ---
 
